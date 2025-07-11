@@ -149,6 +149,21 @@
             z-index: -1;
         }
 
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #E67E22; /* Orange */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1.2s linear infinite;
+            margin: 20px auto 0;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         .reason-textarea {
             width: 100%;
             padding: 15px;
@@ -222,83 +237,130 @@
         
         <h1 class="title">Circularización rechazada</h1>
         
-        <div id="form-container">
-            <p class="message">
-                Para ayudarnos a resolver la discrepancia, por favor, indícanos a continuación el motivo del rechazo.
-            </p>
-            <form id="rechazo-form">
-                <textarea id="motivo-rechazo" class="reason-textarea" placeholder="Escribe aquí el motivo..." required></textarea>
-                <button type="submit" class="continue-button">
-                    Enviar motivo
+        <!-- Contenido que se mostrará solo si el token es válido -->
+        <div id="main-content" style="display: none;">
+            <div id="form-container">
+                <p class="message">
+                    Para ayudarnos a resolver la discrepancia, por favor, indícanos a continuación el motivo del rechazo.
+                </p>
+                <form id="rechazo-form">
+                    <textarea id="motivo-rechazo" class="reason-textarea" placeholder="Escribe aquí el motivo..." required></textarea>
+                    <button type="submit" class="continue-button">
+                        Enviar motivo
+                    </button>
+                </form>
+            </div>
+            
+            <div id="feedback-container" style="display: none;">
+                <p class="message">
+                    Hemos recibido tu mensaje. Nuestro equipo se pondrá en contacto contigo para revisar la información.
+                </p>
+                 <button class="continue-button" onclick="window.close();" style="margin-top: 20px;">
+                    Cerrar
                 </button>
-            </form>
-        </div>
-        
-        <div id="feedback-container" style="display: none;">
-            <p class="message">
-                Hemos recibido tu mensaje. Nuestro equipo se pondrá en contacto contigo para revisar la información.
-            </p>
-             <button class="continue-button" onclick="window.close();" style="margin-top: 20px;">
-                Cerrar
-            </button>
+            </div>
         </div>
 
-        <p id="feedback-message" class="message" style="display: none;"></p>
+        <!-- Mensaje de estado/error -->
+        <div id="status-container">
+            <div id="loader" class="loader"></div>
+            <p id="status-message" class="message" style="margin-top: 15px;">Verificando acceso...</p>
+        </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('rechazo-form');
-            const formContainer = document.getElementById('form-container');
-            const feedbackContainer = document.getElementById('feedback-container');
-            const feedbackMessage = document.getElementById('feedback-message');
-            const submitButton = form.querySelector('.continue-button');
+        document.addEventListener('DOMContentLoaded', async function() {
+            const mainContent = document.getElementById('main-content');
+            const statusContainer = document.getElementById('status-container');
+            const loader = document.getElementById('loader');
+            const statusMessage = document.getElementById('status-message');
             const title = document.querySelector('.title');
+            
+            // 1. Extraer el token de la URL
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
 
-            form.addEventListener('submit', async function(event) {
-                event.preventDefault();
-                
-                const motivo = document.getElementById('motivo-rechazo').value;
-                
-                submitButton.disabled = true;
-                submitButton.textContent = 'Enviando...';
-                feedbackMessage.style.display = 'none';
+            if (!token) {
+                loader.style.display = 'none';
+                statusMessage.textContent = 'Acceso denegado. Este enlace es inválido o no contiene la información necesaria.';
+                statusMessage.style.color = '#e74c3c';
+                return;
+            }
 
-                try {
-                    const response = await fetch('/api/send-email', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ message: motivo }),
-                    });
+            try {
+                // 2. Verificar el token con el backend (el loader ya está visible)
+                const verificationResponse = await fetch('/api/verify-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
 
-                    if (response.ok) {
-                        title.textContent = 'Rechazo enviado';
-                        formContainer.style.display = 'none';
-                        feedbackContainer.style.display = 'block';
-                    } else {
-                        const errorData = await response.json();
-                        throw new Error(errorData.message || 'Error al enviar el formulario.');
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    feedbackMessage.textContent = `Error: ${error.message}. Por favor, inténtalo de nuevo.`;
-                    feedbackMessage.style.display = 'block';
-                    feedbackMessage.style.color = '#e74c3c';
-                    
-                    submitButton.disabled = false;
-                    submitButton.textContent = 'Enviar motivo';
+                if (!verificationResponse.ok) {
+                    const errorData = await verificationResponse.json();
+                    throw new Error(errorData.message || 'El enlace ha expirado o no es válido.');
                 }
-            });
 
-            // Efecto al cargar
-            setTimeout(function() {
-                document.querySelector('.warning-icon').style.transform = 'scale(1.1)';
-                setTimeout(function() {
-                    document.querySelector('.warning-icon').style.transform = 'scale(1)';
-                }, 200);
-            }, 500);
+                // 3. Si el token es válido, mostrar el contenido principal
+                statusContainer.style.display = 'none';
+                mainContent.style.display = 'block';
+
+                // Y ahora que el contenido es visible, configuramos el formulario
+                const form = document.getElementById('rechazo-form');
+                const formContainer = document.getElementById('form-container');
+                const feedbackContainer = document.getElementById('feedback-container');
+                const submitButton = form.querySelector('.continue-button');
+
+                // 4. Configurar el envío del formulario
+                form.addEventListener('submit', async function(event) {
+                    event.preventDefault();
+                    
+                    const motivo = document.getElementById('motivo-rechazo').value;
+                    
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'Enviando...';
+                    
+                    // Mostramos el mensaje de estado de nuevo para el feedback de envío
+                    statusContainer.style.display = 'block';
+                    loader.style.display = 'none'; // No necesitamos el loader aquí, solo texto.
+                    statusMessage.style.display = 'none'; // Ocultar por si hay error previo
+                    statusMessage.style.color = '#7f8c8d'; // Reset color
+
+                    try {
+                        // Se envía el motivo Y el token para una segunda verificación
+                        const response = await fetch('/api/send-email', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ message: motivo, token: token }),
+                        });
+
+                        if (response.ok) {
+                            title.textContent = 'Rechazo enviado';
+                            formContainer.style.display = 'none';
+                            feedbackContainer.style.display = 'block';
+                            statusContainer.style.display = 'none';
+                        } else {
+                            const errorData = await response.json();
+                            throw new Error(errorData.message || 'Error al enviar el formulario.');
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        statusMessage.textContent = `Error: ${error.message}. Por favor, inténtalo de nuevo.`;
+                        statusMessage.style.display = 'block';
+                        statusMessage.style.color = '#e74c3c';
+                        
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Enviar motivo';
+                    }
+                });
+
+            } catch (error) {
+                loader.style.display = 'none';
+                statusMessage.textContent = `Error: ${error.message}`;
+                statusMessage.style.color = '#e74c3c';
+                return;
+            }
         });
     </script>
 </body>
