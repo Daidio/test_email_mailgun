@@ -10,6 +10,16 @@
       "source": "/rechazo.html",
       "destination": "/rechazo",
       "permanent": true
+    },
+    {
+      "source": "/invalido.html",
+      "destination": "/invalido",
+      "permanent": true
+    },
+    {
+      "source": "/ya-respondido.html",
+      "destination": "/ya-respondido",
+      "permanent": true
     }
   ]
 } 

@@ -281,36 +281,45 @@
             const token = params.get('token');
 
             if (!token) {
-                loader.style.display = 'none';
-                statusMessage.textContent = 'Acceso denegado. Este enlace es inválido o no contiene la información necesaria.';
-                statusMessage.style.color = '#e74c3c';
+                window.location.href = '/invalido';
                 return;
             }
 
             try {
-                // 2. Verificar el token con el backend (el loader ya está visible)
-                const verificationResponse = await fetch('/api/verify-token', {
+                // 2. Verificar el token y el estado del usuario con el backend
+                const verificationResponse = await fetch('/api/check-status', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token })
                 });
 
                 if (!verificationResponse.ok) {
-                    const errorData = await verificationResponse.json();
-                    throw new Error(errorData.message || 'El enlace ha expirado o no es válido.');
+                    // Si hay un error (token inválido, usuario no encontrado, etc.), redirigir a inválido
+                    window.location.href = '/invalido';
+                    return;
                 }
 
-                // 3. Si el token es válido, mostrar el contenido principal
-                statusContainer.style.display = 'none';
-                mainContent.style.display = 'block';
+                const statusData = await verificationResponse.json();
 
-                // Y ahora que el contenido es visible, configuramos el formulario
+                // 3. Verificar si el usuario puede responder
+                if (statusData.canRespond) {
+                    // El usuario puede responder, mostrar el formulario
+                    statusContainer.style.display = 'none';
+                    mainContent.style.display = 'block';
+                } else {
+                    // El usuario ya respondió, redirigir a la página de "ya respondido"
+                    const estado = statusData.estado;
+                    const fecha = statusData.fecha_respuesta;
+                    window.location.href = `/ya-respondido?estado=${estado}&fecha=${fecha}`;
+                    return;
+                }
+
+                // 4. Configurar el envío del formulario (solo si llegamos aquí)
                 const form = document.getElementById('rechazo-form');
                 const formContainer = document.getElementById('form-container');
                 const feedbackContainer = document.getElementById('feedback-container');
                 const submitButton = form.querySelector('.continue-button');
 
-                // 4. Configurar el envío del formulario
                 form.addEventListener('submit', async function(event) {
                     event.preventDefault();
                     
@@ -356,12 +365,11 @@
                 });
 
             } catch (error) {
-                loader.style.display = 'none';
-                statusMessage.textContent = `Error: ${error.message}`;
-                statusMessage.style.color = '#e74c3c';
+                // Si hay cualquier otro error (ej. de red), redirigir también
+                window.location.href = '/invalido';
                 return;
             }
         });
     </script>
 </body>
-</html> 
+</html>

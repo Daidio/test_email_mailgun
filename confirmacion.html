@@ -70,6 +70,21 @@
             100% { transform: scale(1); }
         }
 
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #27ae60;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1.2s linear infinite;
+            margin: 20px auto 0;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         .title {
             font-size: 28px;
             font-weight: bold;
@@ -89,7 +104,7 @@
         }
 
         .continue-button {
-            background: linear-gradient(135deg, #E67E22, #f39c12);
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
             color: white;
             border: none;
             padding: 15px 40px;
@@ -98,7 +113,7 @@
             border-radius: 50px;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 5px 15px rgba(230, 126, 34, 0.3);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
             text-transform: uppercase;
             letter-spacing: 1px;
             min-width: 200px;
@@ -106,13 +121,19 @@
 
         .continue-button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(230, 126, 34, 0.4);
-            background: linear-gradient(135deg, #d35400, #E67E22);
+            box-shadow: 0 8px 25px rgba(39, 174, 96, 0.4);
+            background: linear-gradient(135deg, #229954, #27ae60);
         }
 
         .continue-button:active {
             transform: translateY(0);
-            box-shadow: 0 5px 15px rgba(230, 126, 34, 0.3);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
+        }
+
+        .continue-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .patrimore-logo {
@@ -196,39 +217,142 @@
         
         <div class="success-icon"></div>
         
-        <h1 class="title">¡Circularización aceptada!</h1>
+        <h1 class="title">Confirmación de Circularización</h1>
         
-        <p class="message">
-            Gracias por aceptar la circularización, hemos enviado esta información a la corredora de bolsa.
-        </p>
-        
-        <button class="continue-button" onclick="continuarProceso()">
-            Continuar
-        </button>
+        <!-- Contenido que se mostrará solo si el token es válido -->
+        <div id="main-content" style="display: none;">
+            <p class="message">
+                ¿Confirmas que los saldos mostrados en la circularización son correctos?
+            </p>
+            
+            <button id="confirm-button" class="continue-button" onclick="confirmarCircularizacion()">
+                Confirmar Saldos
+            </button>
+            
+            <div id="success-message" style="display: none;">
+                <p class="message">
+                    ¡Gracias por confirmar! Hemos registrado tu aceptación de la circularización.
+                </p>
+                <button class="continue-button" onclick="window.close();" style="margin-top: 20px;">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+
+        <!-- Mensaje de estado/error -->
+        <div id="status-container">
+            <div id="loader" class="loader"></div>
+            <p id="status-message" class="message" style="margin-top: 15px;">Verificando acceso...</p>
+        </div>
     </div>
 
     <script>
-        function continuarProceso() {
-            // Aquí puedes agregar la lógica para continuar el proceso
-            alert('Proceso completado exitosamente. Gracias por su confirmación.');
-            
-            // Opcional: redireccionar a otra página
-            // window.location.href = 'otra_pagina.html';
-            
-            // O cerrar la ventana si fue abierta desde el correo
-            // window.close();
-        }
+        let userToken = null;
 
-        // Efecto de sonido al cargar (opcional)
-        document.addEventListener('DOMContentLoaded', function() {
-            // Pequeña animación adicional al cargar
-            setTimeout(function() {
-                document.querySelector('.success-icon').style.transform = 'scale(1.1)';
-                setTimeout(function() {
-                    document.querySelector('.success-icon').style.transform = 'scale(1)';
-                }, 200);
-            }, 500);
+        document.addEventListener('DOMContentLoaded', async function() {
+            const mainContent = document.getElementById('main-content');
+            const statusContainer = document.getElementById('status-container');
+            const loader = document.getElementById('loader');
+            const statusMessage = document.getElementById('status-message');
+            const title = document.querySelector('.title');
+            
+            // 1. Extraer el token de la URL
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
+            userToken = token;
+
+            if (!token) {
+                window.location.href = '/invalido';
+                return;
+            }
+
+            try {
+                // 2. Verificar el token y el estado del usuario con el backend
+                const verificationResponse = await fetch('/api/check-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+
+                if (!verificationResponse.ok) {
+                    // Si hay un error (token inválido, usuario no encontrado, etc.), redirigir a inválido
+                    window.location.href = '/invalido';
+                    return;
+                }
+
+                const statusData = await verificationResponse.json();
+
+                // 3. Verificar si el usuario puede responder
+                if (statusData.canRespond) {
+                    // El usuario puede responder, mostrar el contenido
+                    statusContainer.style.display = 'none';
+                    mainContent.style.display = 'block';
+                } else {
+                    // El usuario ya respondió, redirigir a la página de "ya respondido"
+                    const estado = statusData.estado;
+                    const fecha = statusData.fecha_respuesta;
+                    window.location.href = `/ya-respondido?estado=${estado}&fecha=${fecha}`;
+                    return;
+                }
+
+            } catch (error) {
+                // Si hay cualquier otro error (ej. de red), redirigir también
+                window.location.href = '/invalido';
+                return;
+            }
         });
+
+        async function confirmarCircularizacion() {
+            const confirmButton = document.getElementById('confirm-button');
+            const mainContent = document.getElementById('main-content');
+            const successMessage = document.getElementById('success-message');
+            const statusContainer = document.getElementById('status-container');
+            const statusMessage = document.getElementById('status-message');
+            const loader = document.getElementById('loader');
+            const title = document.querySelector('.title');
+
+            // Deshabilitar el botón y mostrar estado de carga
+            confirmButton.disabled = true;
+            confirmButton.textContent = 'Procesando...';
+            
+            // Mostrar el contenedor de estado para feedback
+            statusContainer.style.display = 'block';
+            loader.style.display = 'none';
+            statusMessage.style.display = 'none';
+            statusMessage.style.color = '#7f8c8d';
+
+            try {
+                // Enviar la confirmación al backend
+                const response = await fetch('/api/accept-confirmation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token: userToken }),
+                });
+
+                if (response.ok) {
+                    // Éxito: actualizar la interfaz
+                    title.textContent = '¡Circularización Confirmada!';
+                    mainContent.querySelector('.message').style.display = 'none';
+                    confirmButton.style.display = 'none';
+                    successMessage.style.display = 'block';
+                    statusContainer.style.display = 'none';
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al procesar la confirmación.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusMessage.textContent = `Error: ${error.message}. Por favor, inténtalo de nuevo.`;
+                statusMessage.style.display = 'block';
+                statusMessage.style.color = '#e74c3c';
+                
+                // Rehabilitar el botón
+                confirmButton.disabled = false;
+                confirmButton.textContent = 'Confirmar Saldos';
+            }
+        }
     </script>
 </body>
 </html> 

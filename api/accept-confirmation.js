@@ -1,4 +1,3 @@
-// Importa el cliente de Mailgun
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
 const jwt = require('jsonwebtoken');
@@ -36,7 +35,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { message, token } = req.body;
+    const { token } = req.body;
 
     // 1. Verificar el token ANTES de hacer nada más
     if (!token) {
@@ -47,7 +46,7 @@ module.exports = async (req, res) => {
     try {
       decodedToken = jwt.verify(token, JWT_SECRET);
     } catch (error) {
-      console.error('Error de verificación de JWT en send-email:', error.message);
+      console.error('Error de verificación de JWT en accept-confirmation:', error.message);
       return res.status(401).json({ message: 'El token es inválido o ha expirado.' });
     }
 
@@ -56,11 +55,6 @@ module.exports = async (req, res) => {
     if (!userEmail) {
         console.error("El token verificado no contiene la propiedad 'email'.");
         return res.status(400).json({ message: 'Token inválido: falta información del usuario.' });
-    }
-
-    // Validar que el mensaje no esté vacío
-    if (!message || typeof message !== 'string' || message.trim() === '') {
-      return res.status(400).json({ message: 'El contenido del mensaje no puede estar vacío.' });
     }
 
     // 2. DOBLE VERIFICACIÓN: Consultar la base de datos para asegurarse de que no haya respondido ya
@@ -94,15 +88,14 @@ module.exports = async (req, res) => {
     // 3. ACTUALIZAR EL ESTADO EN LA BASE DE DATOS (Operación atómica)
     const updateQuery = `
       UPDATE circularizacion 
-      SET estado = 'rechazado', 
-          fecha_respuesta = datetime('now'), 
-          motivo_rechazo = ?
+      SET estado = 'aceptado', 
+          fecha_respuesta = datetime('now')
       WHERE cliente_email = ? AND campana_id = ? AND estado = 'enviado'
     `;
     
     const updateResult = await db.execute({
       sql: updateQuery,
-      args: [message.trim(), userEmail, 'jun-2025']
+      args: [userEmail, 'jun-2025']
     });
 
     // Verificar que la actualización fue exitosa
@@ -114,24 +107,24 @@ module.exports = async (req, res) => {
 
     // 4. ENVIAR EL CORREO DE NOTIFICACIÓN
     const mailData = {
-      from: `Notificación Rechazo <${FROM_EMAIL_ADDRESS}>`,
+      from: `Notificación Confirmación <${FROM_EMAIL_ADDRESS}>`,
       to: [TO_EMAIL_ADDRESS],
-      subject: `Nuevo Rechazo de Circularización - ${userEmail}`,
-      text: `El usuario ${userEmail} ha RECHAZADO la circularización con el siguiente motivo:\n\n${message}`,
+      subject: `Nueva Confirmación de Circularización - ${userEmail}`,
+      text: `El usuario ${userEmail} ha ACEPTADO la circularización.`,
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2>Nuevo Rechazo de Circularización</h2>
-          <p>El usuario <strong>${userEmail}</strong> ha <strong style="color: #e74c3c;">RECHAZADO</strong> la circularización con el siguiente motivo:</p>
-          <blockquote style="background: #f9f9f9; border-left: 10px solid #e74c3c; margin: 1.5em 10px; padding: 0.5em 10px;">
-            <p style="white-space: pre-wrap;">${message}</p>
-          </blockquote>
-          <p>Por favor, revisa esta información y ponte en contacto con el usuario si es necesario.</p>
+          <h2>Nueva Confirmación de Circularización</h2>
+          <p>El usuario <strong>${userEmail}</strong> ha <strong style="color: #27ae60;">ACEPTADO</strong> la circularización.</p>
+          <div style="background: #e8f5e8; border-left: 10px solid #27ae60; margin: 1.5em 10px; padding: 0.5em 10px;">
+            <p><strong>Estado:</strong> Confirmado</p>
+            <p><strong>Acción requerida:</strong> Ninguna. La circularización ha sido aceptada.</p>
+          </div>
           <hr>
           <p style="color: #888;">
             <strong>Campaña:</strong> jun-2025<br>
-            <strong>Fecha del rechazo:</strong> ${new Date().toLocaleString('es-ES')}
+            <strong>Fecha de confirmación:</strong> ${new Date().toLocaleString('es-ES')}
           </p>
-          <p style="color: #888;">Este es un mensaje automático enviado desde la página de rechazo de Patrimore.</p>
+          <p style="color: #888;">Este es un mensaje automático enviado desde la página de confirmación de Patrimore.</p>
         </div>
       `,
     };
@@ -140,15 +133,15 @@ module.exports = async (req, res) => {
     await mg.messages.create(MAILGUN_DOMAIN, mailData);
 
     // 5. REGISTRO DE AUDITORÍA (Opcional: log del evento)
-    console.log(`Rechazo procesado exitosamente para ${userEmail} en campaña jun-2025`);
+    console.log(`Confirmación procesada exitosamente para ${userEmail} en campaña jun-2025`);
 
     // Enviar respuesta de éxito
     return res.status(200).json({ 
-      message: 'Rechazo registrado y correo enviado correctamente.' 
+      message: 'Confirmación registrada y correo enviado correctamente.' 
     });
 
   } catch (error) {
-    console.error('Error al procesar el rechazo:', error);
+    console.error('Error al procesar la confirmación:', error);
     return res.status(500).json({ message: 'Hubo un error al procesar tu solicitud.' });
   }
 }; 
